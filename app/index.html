@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Heart Sound Analyzer</title>
+<style>
+  :root {
+    --page: #f4f6f8;
+    --card: #ffffff;
+    --ink: #10202f;
+    --muted: #5a6876;
+    --line: #dde3e9;
+    --grid-minor: rgba(214, 110, 120, 0.13);
+    --grid-major: rgba(214, 110, 120, 0.26);
+    --trace: #10202f;
+    --accent: #1b5fd1;
+    --accent-ink: #ffffff;
+    --good: #17703f;
+    --warn: #a4400f;
+    --warn-bg: #fdebdd;
+    --bar-bg: #e8edf1;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page: #0d1319;
+      --card: #151d25;
+      --ink: #e8eef3;
+      --muted: #94a3b0;
+      --line: #27323d;
+      --grid-minor: rgba(226, 120, 132, 0.10);
+      --grid-major: rgba(226, 120, 132, 0.20);
+      --trace: #e8eef3;
+      --accent: #6aa3ff;
+      --accent-ink: #08121f;
+      --good: #6fdc9b;
+      --warn: #ffb27a;
+      --warn-bg: #3a2113;
+      --bar-bg: #222e3a;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.5;
+    padding: 40px 20px 56px;
+  }
+  main { max-width: 760px; margin: 0 auto; }
+
+  h1 {
+    font-family: var(--serif);
+    font-weight: 600;
+    font-size: clamp(2rem, 5vw, 2.6rem);
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+    margin: 0 0 10px;
+  }
+  h3 {
+    font-family: var(--serif);
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin: 0 0 4px;
+  }
+  .lede { color: var(--muted); margin: 0 0 28px; max-width: 52ch; }
+
+  .grid-paper {
+    background-color: var(--card);
+    background-image:
+      linear-gradient(var(--grid-minor) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-minor) 1px, transparent 1px),
+      linear-gradient(var(--grid-major) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-major) 1px, transparent 1px);
+    background-size: 12px 12px, 12px 12px, 60px 60px, 60px 60px;
+  }
+
+  .panel {
+    position: relative;
+    display: block;
+    width: 100%;
+    height: 220px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .panel:hover, .panel.drag { border-color: var(--accent); }
+  .panel.drag { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+  .panel:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .panel.has-file { cursor: default; }
+  .panel canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .hint {
+    position: absolute;
+    left: 50%; bottom: 22px;
+    transform: translateX(-50%);
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 8px 18px;
+    font-size: 0.95rem;
+    white-space: nowrap;
+  }
+  .hint strong { font-weight: 600; }
+  .panel.has-file .hint { display: none; }
+
+  .file-row { display: none; margin-top: 14px; }
+  .file-row.show { display: block; }
+  .file-name { font-weight: 600; overflow-wrap: anywhere; }
+  .file-meta { color: var(--muted); font-size: 0.9rem; }
+  audio { width: 100%; margin-top: 12px; display: none; }
+  audio.show { display: block; }
+
+  .actions { display: none; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+  .actions.show { display: flex; }
+  button.btn {
+    font: inherit;
+    font-weight: 600;
+    border-radius: 10px;
+    padding: 11px 20px;
+    cursor: pointer;
+    border: 1px solid var(--line);
+    background: var(--card);
+    color: var(--ink);
+  }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  button.btn:disabled { opacity: .55; cursor: not-allowed; }
+  button.btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+  .error {
+    display: none;
+    margin-top: 16px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: var(--warn-bg);
+    color: var(--warn);
+    font-size: 0.95rem;
+  }
+  .error.show { display: block; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 22px;
+    margin-top: 18px;
+  }
+  .report { display: none; margin-top: 28px; }
+  .report.show { display: block; }
+  .report .card:first-child { margin-top: 0; }
+  .hidden { display: none !important; }
+
+  .verdict {
+    font-family: var(--serif);
+    font-size: clamp(1.6rem, 4.5vw, 2.1rem);
+    font-weight: 600;
+    line-height: 1.15;
+    margin: 0 0 6px;
+  }
+  .report.normal .verdict { color: var(--good); }
+  .report.abnormal .verdict { color: var(--warn); }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+
+  .bar-row { display: grid; grid-template-columns: 150px 1fr 56px; align-items: center; gap: 12px; margin-top: 10px; }
+  .bar-row .name { font-size: 0.95rem; }
+  .bar-row .pct { text-align: right; font-variant-numeric: tabular-nums; font-size: 0.95rem; }
+  .track { height: 12px; border-radius: 999px; background: var(--bar-bg); overflow: hidden; }
+  .fill { height: 100%; width: 0; border-radius: 999px; transition: width .5s ease; background: var(--accent); }
+  .fill.n { background: var(--good); }
+  .fill.a { background: var(--warn); }
+
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
+  .tile { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+  .tile .val { font-family: var(--serif); font-size: 1.9rem; font-weight: 600; line-height: 1.1; }
+  .tile .val small { font-family: var(--sans); font-size: 0.85rem; font-weight: 400; color: var(--muted); margin-left: 4px; }
+  .tile .lab { font-weight: 600; margin-top: 6px; font-size: 0.95rem; }
+  .tile .hint2 { color: var(--muted); font-size: 0.85rem; margin-top: 2px; }
+
+  .chart-box {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-top: 12px;
+  }
+  .chart-box canvas { display: block; width: 100%; }
+  .caption { color: var(--muted); font-size: 0.88rem; margin: 10px 0 0; max-width: 64ch; }
+
+  .reason {
+    border-left: 4px solid var(--accent);
+    padding: 2px 0 2px 14px;
+    margin-top: 16px;
+  }
+  .reason.ok { border-left-color: var(--good); }
+  .reason.watch { border-left-color: var(--warn); }
+  .reason .r-title { font-weight: 600; }
+  .reason .r-text { color: var(--muted); font-size: 0.95rem; margin-top: 2px; max-width: 64ch; }
+
+  .note {
+    margin: 32px 0 0;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 0.88rem;
+    max-width: 66ch;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .fill, .panel { transition: none; }
+  }
+  @media (max-width: 560px) {
+    .panel { height: 190px; }
+    .tiles { grid-template-columns: 1fr; }
+    .bar-row { grid-template-columns: 96px 1fr 50px; }
+    .hint { white-space: normal; width: calc(100% - 32px); }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Heart Sound Analyzer</h1>
+  <p class="lede">Upload a short heart sound recording. A CNN + LSTM model listens to it, then the page shows what it heard and why.</p>
+
+  <div id="panel" class="panel grid-paper" role="button" tabindex="0" aria-label="Choose a .wav heart sound recording">
+    <canvas id="canvas"></canvas>
+    <div class="hint"><strong>Choose a .wav file</strong> or drop it here</div>
+  </div>
+  <input id="fileInput" type="file" accept=".wav,audio/wav,audio/x-wav" hidden>
+
+  <div id="fileRow" class="file-row">
+    <div id="fileName" class="file-name"></div>
+    <div id="fileMeta" class="file-meta"></div>
+  </div>
+  <audio id="player" controls></audio>
+
+  <div id="actions" class="actions">
+    <button id="analyzeBtn" class="btn primary" type="button">Analyze recording</button>
+    <button id="resetBtn" class="btn" type="button">Choose another file</button>
+  </div>
+
+  <div id="error" class="error" role="alert"></div>
+
+  <section id="report" class="report" aria-live="polite">
+    <div class="card">
+      <h2 id="verdict" class="verdict"></h2>
+      <p id="sub" class="sub"></p>
+      <div class="bar-row">
+        <span class="name">Normal</span>
+        <div class="track"><div id="fillN" class="fill n"></div></div>
+        <span id="pctN" class="pct"></span>
+      </div>
+      <div class="bar-row">
+        <span class="name">Abnormal</span>
+        <div class="track"><div id="fillA" class="fill a"></div></div>
+        <span id="pctA" class="pct"></span>
+      </div>
+    </div>
+
+    <div id="details" class="hidden">
+      <div class="tiles">
+        <div class="tile">
+          <div class="val"><span id="tBpm"></span><small>bpm</small></div>
+          <div class="lab">Heart rate</div>
+          <div class="hint2">Estimated from the repeating beat</div>
+        </div>
+        <div class="tile">
+          <div class="val"><span id="tReg"></span><small>%</small></div>
+          <div class="lab">Rhythm regularity</div>
+          <div class="hint2">Higher means a steadier pattern</div>
+        </div>
+        <div class="tile">
+          <div class="val"><span id="tBet"></span><small>%</small></div>
+          <div class="lab">Sound between beats</div>
+          <div class="hint2">Compared with the beats themselves</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Waveform and detected beats</h3>
+        <p class="caption">The line shows how loud the recording is over time. Dashed marks are the heart sounds the page detected.</p>
+        <div class="chart-box grid-paper"><canvas id="waveChart"></canvas></div>
+      </div>
+
+      <div class="card">
+        <h3>Spectrogram</h3>
+        <p class="caption">This is the picture the model actually looks at. Time runs left to right, low pitch is at the bottom and high pitch at the top, and brighter means louder.</p>
+        <div class="chart-box"><canvas id="specChart"></canvas></div>
+      </div>
+
+      <div class="card">
+        <h3>Where the sound energy sits</h3>
+        <div class="bar-row"><span class="name">Low, 20 to 100 Hz</span><div class="track"><div id="bLow" class="fill"></div></div><span id="pLow" class="pct"></span></div>
+        <div class="bar-row"><span class="name">Mid, 100 to 250 Hz</span><div class="track"><div id="bMid" class="fill"></div></div><span id="pMid" class="pct"></span></div>
+        <div class="bar-row"><span class="name">High, 250 to 600 Hz</span><div class="track"><div id="bHigh" class="fill"></div></div><span id="pHigh" class="pct"></span></div>
+      </div>
+
+      <div class="card">
+        <h3>Why this result</h3>
+        <div id="reasons"></div>
+        <p class="caption">These notes come from simple measurements of the recording with rule-of-thumb limits. They describe the audio and do not show the model’s inner workings.</p>
+      </div>
+    </div>
+  </section>
+
+  <p class="note">This is a learning project, not a medical device, and its result is not a diagnosis. If you have a health concern, talk to a doctor.</p>
+</main>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var panel = $('panel'), canvas = $('canvas'), input = $('fileInput');
+  var player = $('player'), fileRow = $('fileRow'), actions = $('actions');
+  var errorBox = $('error'), report = $('report');
+  var analyzeBtn = $('analyzeBtn');
+
+  var currentFile = null, samples = null, objectUrl = null, lastAnalysis = null;
+
+  function css(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  function setupCanvas(cv, cssHeight) {
+    var dpr = window.devicePixelRatio || 1;
+    var w = cv.clientWidth || cv.parentElement.clientWidth;
+    if (cssHeight) cv.style.height = cssHeight + 'px';
+    var h = cssHeight || cv.clientHeight;
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h * dpr);
+    var ctx = cv.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    return { ctx: ctx, w: w, h: h };
+  }
+
+  /* ---------- upload panel ---------- */
+  function drawIdle() {
+    var r = panel.getBoundingClientRect();
+    canvas.style.height = r.height + 'px';
+    var s = setupCanvas(canvas, r.height), ctx = s.ctx, w = s.w, h = s.h, mid = h * 0.42;
+    ctx.strokeStyle = css('--trace');
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0, mid);
+    var beats = [0.22, 0.30, 0.60, 0.68], heights = [46, 30, 46, 30];
+    for (var i = 0; i < beats.length; i++) {
+      var bx = w * beats[i];
+      ctx.lineTo(bx - 14, mid);
+      ctx.lineTo(bx - 7, mid - heights[i] * 0.35);
+      ctx.lineTo(bx, mid - heights[i]);
+      ctx.lineTo(bx + 7, mid + heights[i] * 0.55);
+      ctx.lineTo(bx + 14, mid);
+    }
+    ctx.lineTo(w, mid);
+    ctx.stroke();
+  }
+
+  function drawPanelWave(data) {
+    var r = panel.getBoundingClientRect();
+    var s = setupCanvas(canvas, r.height), ctx = s.ctx, w = s.w, h = s.h, mid = h / 2;
+    var peak = 0.0001, i;
+    for (i = 0; i < data.length; i++) { var a = Math.abs(data[i]); if (a > peak) peak = a; }
+    var bars = Math.max(60, Math.floor(w / 3));
+    var block = Math.max(1, Math.floor(data.length / bars));
+    var amp = (h * 0.42) / peak;
+    ctx.strokeStyle = css('--trace');
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    for (var b = 0; b < bars; b++) {
+      var min = 1, max = -1, start = b * block;
+      for (var j = 0; j < block && start + j < data.length; j++) {
+        var v = data[start + j];
+        if (v < min) min = v;
+        if (v > max) max = v;
+      }
+      var x = (b + 0.5) * (w / bars);
+      ctx.beginPath();
+      ctx.moveTo(x, mid - max * amp);
+      ctx.lineTo(x, mid - min * amp + 0.5);
+      ctx.stroke();
+    }
+  }
+
+  /* ---------- report charts ---------- */
+  function drawWaveChart(a) {
+    var s = setupCanvas($('waveChart'), 190), ctx = s.ctx, w = s.w, h = s.h;
+    var padL = 8, padR = 8, padT = 10, padB = 24;
+    var iw = w - padL - padR, ih = h - padT - padB, mid = padT + ih / 2;
+    var n = a.wave.length;
+    ctx.strokeStyle = css('--trace');
+    ctx.lineWidth = Math.max(1.5, iw / n * 0.7);
+    ctx.lineCap = 'round';
+    for (var i = 0; i < n; i++) {
+      var x = padL + (i + 0.5) * (iw / n);
+      ctx.beginPath();
+      ctx.moveTo(x, mid - a.wave[i][1] * ih / 2);
+      ctx.lineTo(x, mid - a.wave[i][0] * ih / 2 + 0.5);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = css('--accent');
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 4]);
+    var beats = a.metrics.beats;
+    for (var k = 0; k < beats.length; k++) {
+      var bx = padL + (beats[k] / a.duration) * iw;
+      ctx.beginPath();
+      ctx.moveTo(bx, padT);
+      ctx.lineTo(bx, padT + ih);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    ctx.fillStyle = css('--muted');
+    ctx.font = '12px ' + css('--sans');
+    ctx.textBaseline = 'alphabetic';
+    for (var t = 0; t <= a.duration; t++) {
+      var tx = padL + (t / a.duration) * iw;
+      ctx.textAlign = t === 0 ? 'left' : (t === a.duration ? 'right' : 'center');
+      ctx.fillText(t + ' s', tx, h - 7);
+    }
+  }
+
+  var STOPS = [
+    [0.00, [11, 26, 43]], [0.35, [27, 79, 143]], [0.60, [42, 166, 160]],
+    [0.80, [242, 209, 107]], [1.00, [255, 247, 224]]
+  ];
+  function colorAt(v) {
+    for (var i = 1; i < STOPS.length; i++) {
+      if (v <= STOPS[i][0]) {
+        var a = STOPS[i - 1], b = STOPS[i];
+        var f = (v - a[0]) / (b[0] - a[0]);
+        return [0, 1, 2].map(function (c) { return Math.round(a[1][c] + (b[1][c] - a[1][c]) * f); });
+      }
+    }
+    return STOPS[STOPS.length - 1][1];
+  }
+
+  function drawSpecChart(a) {
+    var s = setupCanvas($('specChart'), 210), ctx = s.ctx, w = s.w, h = s.h;
+    var rows = a.spec.length, cols = a.spec[0].length;
+    var off = document.createElement('canvas');
+    off.width = cols; off.height = rows;
+    var octx = off.getContext('2d');
+    var img = octx.createImageData(cols, rows);
+    for (var r = 0; r < rows; r++) {
+      for (var c = 0; c < cols; c++) {
+        var col = colorAt(a.spec[r][c] / 255);
+        var idx = (((rows - 1 - r) * cols) + c) * 4;
+        img.data[idx] = col[0]; img.data[idx + 1] = col[1]; img.data[idx + 2] = col[2]; img.data[idx + 3] = 255;
+      }
+    }
+    octx.putImageData(img, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(off, 0, 0, w, h);
+  }
+
+  function pct(x) { return (x * 100).toFixed(1) + '%'; }
+  function pct0(x) { return Math.round(x * 100); }
+
+  function drawReport() {
+    if (!lastAnalysis) return;
+    drawWaveChart(lastAnalysis);
+    drawSpecChart(lastAnalysis);
+  }
+
+  function showAnalysis(a) {
+    lastAnalysis = a;
+    var m = a.metrics;
+    $('tBpm').textContent = m.bpm;
+    $('tReg').textContent = pct0(m.regularity);
+    $('tBet').textContent = pct0(m.between);
+    $('pLow').textContent = pct0(m.bands.low) + '%';
+    $('pMid').textContent = pct0(m.bands.mid) + '%';
+    $('pHigh').textContent = pct0(m.bands.high) + '%';
+    $('bLow').style.width = '0'; $('bMid').style.width = '0'; $('bHigh').style.width = '0';
+
+    var box = $('reasons');
+    box.textContent = '';
+    a.reasons.forEach(function (r) {
+      var d = document.createElement('div');
+      d.className = 'reason ' + r.tone;
+      var t = document.createElement('div'); t.className = 'r-title'; t.textContent = r.title;
+      var x = document.createElement('div'); x.className = 'r-text'; x.textContent = r.text;
+      d.appendChild(t); d.appendChild(x); box.appendChild(d);
+    });
+
+    $('details').classList.remove('hidden');
+    requestAnimationFrame(function () {
+      $('bLow').style.width = (m.bands.low * 100) + '%';
+      $('bMid').style.width = (m.bands.mid * 100) + '%';
+      $('bHigh').style.width = (m.bands.high * 100) + '%';
+      drawReport();
+    });
+  }
+
+  function showResult(d) {
+    var abnormal = d.label === 'abnormal';
+    report.classList.toggle('abnormal', abnormal);
+    report.classList.toggle('normal', !abnormal);
+    $('verdict').textContent = abnormal ? 'Abnormal pattern detected' : 'Normal heart sound pattern';
+    $('sub').textContent = 'The model is ' + pct(d.confidence) + ' confident in this result.';
+    $('pctN').textContent = pct(d.probabilities.normal);
+    $('pctA').textContent = pct(d.probabilities.abnormal);
+    $('fillN').style.width = '0';
+    $('fillA').style.width = '0';
+    $('details').classList.add('hidden');
+    lastAnalysis = null;
+    report.classList.add('show');
+    requestAnimationFrame(function () {
+      $('fillN').style.width = (d.probabilities.normal * 100) + '%';
+      $('fillA').style.width = (d.probabilities.abnormal * 100) + '%';
+    });
+    if (d.analysis) showAnalysis(d.analysis);
+    report.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  /* ---------- file handling ---------- */
+  function redraw() { samples ? drawPanelWave(samples) : drawIdle(); drawReport(); }
+  function showError(msg) { errorBox.textContent = msg; errorBox.classList.add('show'); }
+  function clearError() { errorBox.classList.remove('show'); errorBox.textContent = ''; }
+  function formatSize(bytes) {
+    if (bytes < 1024 * 1024) return Math.max(1, Math.round(bytes / 1024)) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+
+  async function decodeForPreview(file) {
+    try {
+      var buf = await file.arrayBuffer();
+      var AC = window.AudioContext || window.webkitAudioContext;
+      var ac = new AC();
+      var audio = await ac.decodeAudioData(buf);
+      ac.close();
+      samples = audio.getChannelData(0);
+      $('fileMeta').textContent = formatSize(file.size) + ', ' + audio.duration.toFixed(1) + ' seconds';
+    } catch (e) {
+      samples = null;
+      $('fileMeta').textContent = formatSize(file.size);
+    }
+    redraw();
+  }
+
+  function handleFile(file) {
+    clearError();
+    report.classList.remove('show');
+    lastAnalysis = null;
+    if (!file) return;
+    if (!/\.wav$/i.test(file.name)) {
+      showError('That file isn’t a .wav. Choose a .wav heart sound recording.');
+      return;
+    }
+    currentFile = file;
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    objectUrl = URL.createObjectURL(file);
+    player.src = objectUrl;
+    player.classList.add('show');
+    $('fileName').textContent = file.name;
+    fileRow.classList.add('show');
+    actions.classList.add('show');
+    panel.classList.add('has-file');
+    decodeForPreview(file);
+  }
+
+  function reset() {
+    currentFile = null; samples = null; lastAnalysis = null;
+    input.value = '';
+    if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = null; }
+    player.removeAttribute('src');
+    player.classList.remove('show');
+    fileRow.classList.remove('show');
+    actions.classList.remove('show');
+    panel.classList.remove('has-file');
+    report.classList.remove('show');
+    clearError();
+    redraw();
+  }
+
+  async function analyze() {
+    if (!currentFile) return;
+    clearError();
+    report.classList.remove('show');
+    analyzeBtn.disabled = true;
+    analyzeBtn.textContent = 'Analyzing…';
+    try {
+      var fd = new FormData();
+      fd.append('file', currentFile);
+      var res = await fetch('/predict', { method: 'POST', body: fd });
+      var data = await res.json().catch(function () { return {}; });
+      if (!res.ok) {
+        showError(typeof data.detail === 'string' ? data.detail : 'The server couldn’t analyze this file.');
+      } else {
+        showResult(data);
+      }
+    } catch (e) {
+      showError('Can’t reach the server. Check that uvicorn is still running in your terminal.');
+    } finally {
+      analyzeBtn.disabled = false;
+      analyzeBtn.textContent = 'Analyze recording';
+    }
+  }
+
+  panel.addEventListener('click', function () { if (!currentFile) input.click(); });
+  panel.addEventListener('keydown', function (e) {
+    if ((e.key === 'Enter' || e.key === ' ') && !currentFile) { e.preventDefault(); input.click(); }
+  });
+  ['dragenter', 'dragover'].forEach(function (t) {
+    panel.addEventListener(t, function (e) { e.preventDefault(); panel.classList.add('drag'); });
+  });
+  ['dragleave', 'drop'].forEach(function (t) {
+    panel.addEventListener(t, function (e) { e.preventDefault(); panel.classList.remove('drag'); });
+  });
+  panel.addEventListener('drop', function (e) {
+    var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    handleFile(f);
+  });
+  input.addEventListener('change', function () { handleFile(input.files[0]); });
+  analyzeBtn.addEventListener('click', analyze);
+  $('resetBtn').addEventListener('click', reset);
+  window.addEventListener('resize', redraw);
+  if (window.matchMedia) {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', redraw);
+  }
+
+  redraw();
+})();
+</script>
+</body>
+</html>
